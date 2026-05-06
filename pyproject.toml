@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Ensure ``app/`` is on sys.path so ``from src.X import ...`` works in tests
+# regardless of the directory pytest was invoked from.
+pythonpath = ["."]
+
+[tool.coverage.report]
+# Exclude development-only and unreachable-by-design lines from the coverage
+# percentage so the metric reflects actual production-code coverage.
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
