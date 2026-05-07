@@ -170,15 +170,16 @@ A missing word prints a friendly message:
 ### `find <words...>`
 
 Returns the URLs of pages containing **all** of the given words
-(conjunctive / AND semantics). Each query word is run through the same
-tokeniser used at build time, so capitalisation and punctuation are
-handled consistently:
+(conjunctive / AND semantics), **ranked by TF-IDF relevance** so the
+most pertinent match comes first. Each query word is run through the
+same tokeniser used at build time, so capitalisation and punctuation
+are handled consistently:
 
 ```
 > find good friends
 2 page(s) match:
+  https://quotes.toscrape.com/tag/friendship/    # higher score
   https://quotes.toscrape.com/page/2/
-  https://quotes.toscrape.com/tag/friendship/
 
 > find Good!
 8 page(s) match:
@@ -305,6 +306,29 @@ friends", not "either"). It is also computationally cheap with
 `set.intersection`. Each query word is re-tokenised through the same
 `tokenise()` used at build time, so `find Good!` works the same as
 `find good`.
+
+### TF-IDF ranking
+
+After the AND filter narrows the candidate set, results are sorted by
+TF-IDF relevance:
+
+    score(d) = sum_{t in Q} tf(t, d) * log(N / df(t))
+
+where `N` is the number of documents and `df(t)` is the document
+frequency of term `t`. The two factors give complementary signals:
+`tf` rewards documents that mention the query term often, while `idf`
+discounts terms that appear everywhere (a query word in nearly every
+page contributes little to ranking - see Lecture 12 on quality vs.
+topical features). Equal scores are broken by ascending `doc_id` to
+keep the output deterministic across runs.
+
+Crucially, this ranking required *no* index changes - the per-posting
+`tf` and per-term `doc_freq` were stored at build time precisely so the
+search layer could be upgraded later without re-crawling. Computing
+the score over the AND-filtered candidate set (rather than the full
+inverted lists) keeps the cost proportional to the rare-term posting
+list, in line with the "skip rare-term first" optimisation discussed
+in Lecture 13.
 
 ## Git workflow
 

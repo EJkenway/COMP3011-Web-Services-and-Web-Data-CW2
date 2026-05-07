@@ -91,6 +91,18 @@ def test_find_one_missing_term_short_circuits_to_empty():
     assert find(_make_index(), ["brown", "unicorn"]) == []
 
 
+def test_find_returns_empty_when_no_document_contains_all_terms():
+    """All terms exist in the index, but no single document contains all of them.
+
+    Distinct from the missing-term short-circuit above: here every query term
+    is found, but the intersection of their posting sets is empty. This
+    exercises the path where AND filtering eliminates all candidates before
+    TF-IDF scoring runs.
+    """
+    # In _make_index: 'quick' is only in doc 1, 'lazy' is only in doc 2.
+    assert find(_make_index(), ["quick", "lazy"]) == []
+
+
 def test_find_returns_only_documents_containing_every_word():
     """'lazy' is in doc 2 only -> 'brown lazy' returns just doc 2."""
     results = find(_make_index(), ["brown", "lazy"])
@@ -117,11 +129,65 @@ def test_find_with_punctuation_only_query_returns_empty():
     assert find(_make_index(), ["!?.,"]) == []
 
 
-def test_find_results_are_sorted_by_doc_id():
-    """Order is determined by insertion order (doc_id), not by URL."""
+def test_find_ties_are_broken_by_ascending_doc_id():
+    """Documents with equal TF-IDF scores must be returned in doc_id order."""
+    # In _make_index(), 'fox' has tf=1 in both doc 1 and doc 2 -> equal scores.
+    # Tie-break by doc_id means doc 1 (URL a) comes before doc 2 (URL b).
     results = find(_make_index(), ["fox"])
     assert results[0] == "https://example.com/a"
     assert results[1] == "https://example.com/b"
+
+
+def test_find_ranks_higher_term_frequency_first():
+    """A document with higher tf for the query term must rank ahead of one with lower tf."""
+    index = Index()
+    # doc 1: 'fox' once
+    index.add_document("https://example.com/a", "<p>quick brown fox</p>")
+    # doc 2: 'fox' three times -> higher tf -> should rank first
+    index.add_document("https://example.com/b", "<p>fox fox fox jumps</p>")
+    # doc 3: no 'fox', just to give N a non-trivial value
+    index.add_document("https://example.com/c", "<p>cat dog bird</p>")
+
+    results = find(index, ["fox"])
+    assert results == ["https://example.com/b", "https://example.com/a"]
+
+
+def test_find_weights_rare_terms_more_heavily_via_idf():
+    """A rarer query term contributes more to the score than a common one."""
+    index = Index()
+    # 'common' appears in every doc; 'rare' appears in only one.
+    index.add_document("https://example.com/a", "<p>common common common</p>")
+    index.add_document("https://example.com/b", "<p>common common</p>")
+    index.add_document("https://example.com/c", "<p>common rare</p>")
+
+    # find('common rare') matches only doc c (AND filter).
+    # This single-doc result is trivial; the real assertion is on a query
+    # where two candidates compete and idf decides.
+    index2 = Index()
+    index2.add_document("https://example.com/a", "<p>common common common rare</p>")
+    index2.add_document("https://example.com/b", "<p>common common common common</p>")
+    index2.add_document("https://example.com/c", "<p>common common common common</p>")
+
+    # Query 'common rare':
+    #   - doc a contains both -> matches
+    #   - doc b, c contain only 'common' -> filtered out by AND
+    # Single match - the real point of this test is below.
+    results = find(index2, ["common", "rare"])
+    assert results == ["https://example.com/a"]
+
+    # Now construct a case where two docs both contain a rare and a common term,
+    # but with different proportions. Higher rare-term tf should win.
+    index3 = Index()
+    # doc a: 'common' three times, 'rare' once
+    index3.add_document("https://example.com/a", "<p>common common common rare</p>")
+    # doc b: 'common' once, 'rare' three times -> rare-heavy -> higher score
+    index3.add_document("https://example.com/b", "<p>common rare rare rare</p>")
+    # doc c: only 'common' to inflate doc_freq for 'common' -> idf(common) low
+    index3.add_document("https://example.com/c", "<p>common common</p>")
+
+    results = find(index3, ["common", "rare"])
+    # doc b has more occurrences of the rare (high-idf) term -> ranks first.
+    assert results == ["https://example.com/b", "https://example.com/a"]
 
 
 def test_find_tokenises_multi_word_single_argument():
