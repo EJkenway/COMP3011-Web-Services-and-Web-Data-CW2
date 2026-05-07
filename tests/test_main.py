@@ -100,6 +100,15 @@ def test_handle_print_with_index_shows_term_entry(populated_index, capsys):
     assert "Document frequency: 2" in out
 
 
+def test_handle_print_warns_on_extra_args_but_still_prints(populated_index, capsys):
+    """Extra arguments to 'print' produce a warning and are ignored, not silently dropped."""
+    main_mod.handle_print(populated_index, ["fox", "extra", "args"])
+    out = capsys.readouterr().out
+    assert "warning" in out
+    assert "extra args" in out  # extras concatenated into the warning
+    assert "Term: fox" in out  # primary word still printed
+
+
 # --- handle_find ----------------------------------------------------------
 
 
