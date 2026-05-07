@@ -86,6 +86,9 @@ def handle_print(index: Index | None, args: list[str]) -> None:
     if not args:
         print("usage: print <word>")
         return
+    if len(args) > 1:
+        extras = " ".join(args[1:])
+        print(f"warning: 'print' takes one word; ignoring: {extras}")
     if not _require_index(index):
         return
     print_term(index, args[0])
